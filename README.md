@@ -1,48 +1,154 @@
 # X32 MCP Server
 
-Behringer X32 デジタルミキサーを**自然言語エージェント（Claude/ChatGPT等）**から操作するためのMCPサーバー実装です。
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-## 特徴
+Behringer X32 デジタルミキサーを**自然言語エージェント（Claude Code/Claude Desktop/ChatGPT等）**から操作するための[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバー実装です。
 
-- **FastMCP + python-osc** による OSC over UDP (port 10023) 制御
-- **STDIO/Streamable HTTP** 両対応のトランスポート
-- **自動keepalive**（/xremote を8秒間隔で送信）
-- **モックX32** を同梱し、実機なしでの開発・テストが可能
-- フェーダー、ミュート、バス送り、出力ルーティング等の基本操作をツールとして提供
+AIアシスタントと会話するだけで、X32の設定変更やミキシング操作を自動化できます。
 
-## セットアップ
+## ✨ 特徴
 
-### 1. 仮想環境の作成とインストール
+- 🎛️ **包括的なX32制御** - フェーダー、EQ、ルーティング、DCAなど27種類の操作ツールを提供
+- 🤖 **自然言語操作** - 「チャンネル1のフェーダーを-3dBに」といった指示で操作可能
+- 🔌 **FastMCP + python-osc** - OSC over UDP (port 10023) による高速通信
+- 🌐 **複数トランスポート対応** - STDIO（Claude Desktop/Claude Code）とStreamable HTTP（Web統合）の両方をサポート
+- ♻️ **自動keepalive** - X32との接続を維持（/xremoteを8秒間隔で自動送信）
+- 🧪 **モックX32同梱** - 実機なしでの開発・テストが可能
+- 🔒 **セキュリティ設計** - IP固定、入力バリデーション、レート制限を実装
+
+## 📋 必要要件
+
+- Python 3.11 以上
+- Behringer X32/X32 Rack/M32 デジタルミキサー（または互換エミュレーター）
+- ネットワーク接続（UDP 10023番ポート）
+
+## 🚀 クイックスタート
+
+### 1. インストール
 
 ```bash
+# リポジトリをクローン
+git clone https://github.com/mackatwentytsuru/x32-MCP.git
+cd x32-MCP
+
+# 仮想環境を作成してアクティベート
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# 依存関係をインストール
 pip install -e .
 ```
 
-### 2. 開発用依存関係（テスト実行時）
+### 2. X32のIPアドレスを設定
 
-```bash
-pip install -e ".[dev]"
+`src/x32_mcp/config.py`を編集して、X32のIPアドレスを設定：
+
+```python
+X32_IP = "192.168.1.12"  # あなたのX32のIPアドレスに変更
+X32_PORT = 10023
 ```
 
-## 使い方
+### 3. Claude CodeまたはClaude Desktopで使用
 
-### モックX32の起動（開発・テスト用）
-
-別ターミナルで以下を実行：
+#### Claude Codeで使用する場合
 
 ```bash
+# ユーザースコープで追加（すべてのプロジェクトで利用可能）
+claude mcp add x32-mcp --scope user --env PATH="$(pwd)/.venv/bin:/usr/local/bin:/usr/bin:/bin" -- python -m x32_mcp.server stdio
+
+# プロジェクトスコープで追加（このプロジェクトのみで利用可能）
+claude mcp add x32-mcp --scope project --env PATH="$(pwd)/.venv/bin:/usr/local/bin:/usr/bin:/bin" -- python -m x32_mcp.server stdio
+```
+
+Claude Codeを再起動すると、X32操作ツールが利用可能になります。
+
+#### Claude Desktopで使用する場合
+
+`~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）または
+`%APPDATA%\Claude\claude_desktop_config.json`（Windows）に以下を追加：
+
+```json
+{
+  "mcpServers": {
+    "x32-mcp": {
+      "command": "python",
+      "args": ["-m", "x32_mcp.server", "stdio"],
+      "cwd": "/path/to/x32-MCP",
+      "env": {
+        "PATH": "/path/to/x32-MCP/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  }
+}
+```
+
+Claude Desktopを再起動してください。
+
+### 4. 開発・テスト用（オプション）
+
+実機がない場合は、モックX32サーバーを使用できます：
+
+```bash
+# 別ターミナルでモックX32を起動
 python scripts/fake_x32.py
+
+# テストを実行
+pip install -e ".[dev]"
+pytest -q
 ```
 
-モックは UDP :10023 で待ち受け、最小限のOSCアドレスに応答します。
+## 💬 使用例
 
-> **注意**: 本番環境では実機またはエミュレーター（[pmaillot/X32-Behringer](https://github.com/pmaillot/X32-Behringer)）の使用を推奨します。
+MCPサーバーを設定後、Claude Code/Claude Desktopで自然言語でX32を操作できます：
 
-### MCPサーバーの起動
+### 基本操作
 
-#### STDIOモード（MCP Inspector / Claude Desktop等）
+```
+👤 「チャンネル1の名前をVocal 1にして、色を赤にして」
+🤖 → set_channel_name(1, "Vocal 1"), set_channel_color(1, "RED")
+
+👤 「チャンネル1のフェーダーを0dBにして、パンを中央にして」
+🤖 → set_fader(1, 0.0), set_pan(1, 0)
+
+👤 「チャンネル2をミュートして」
+🤖 → set_mute(2, true)
+```
+
+### EQ調整
+
+```
+👤 「チャンネル2のEQで、3kHzを+5dBブーストして」
+🤖 → set_eq_enabled(2, true), set_eq_band(2, 2, 3000, 5.0, 1.0)
+
+👤 「チャンネル1のEQをリセットして」
+🤖 → reset_eq(1)
+```
+
+### DCAグループ
+
+```
+👤 「DCA1にVocalsと名前をつけて、フェーダーを-3dBに」
+🤖 → set_dca_name(1, "Vocals"), set_dca_fader(1, -3.0)
+
+👤 「DCA1を黄色にして」
+🤖 → set_dca_color(1, "YELLOW")
+```
+
+### マスター操作
+
+```
+👤 「メインLRフェーダーを-5dBに下げて」
+🤖 → set_main_lr_fader(-5.0)
+
+👤 「バス3のフェーダーを-10dBにして、ミュートして」
+🤖 → set_bus_fader(3, -10.0), set_bus_mute(3, true)
+```
+
+## 🔧 高度な使用方法
+
+### MCP Inspectorでの開発
 
 ```bash
 mcp dev src/x32_mcp/server.py
@@ -52,13 +158,36 @@ uv run mcp dev src/x32_mcp/server.py
 
 > **重要**: STDIOモードでは `stdout` への出力は厳禁です（MCP JSON破損防止）。ログは自動的に `stderr` に出力されます。
 
-#### Streamable HTTPモード（任意）
+### Streamable HTTPモード
+
+Web統合やカスタムクライアント向け：
 
 ```bash
 python -m x32_mcp.server http --host 127.0.0.1 --port 8000
 ```
 
-## 提供ツール（27ツール）
+### Pythonプログラムから直接使用
+
+```python
+from x32_mcp.osc_client import X32Client
+from x32_mcp.conv import db_to_level
+
+# X32に接続
+client = X32Client(host="192.168.1.12", port=10023)
+client.start_xremote_keepalive()
+
+# チャンネル1を設定
+client.send("/ch/01/config/name", "Vocal 1")
+client.send("/ch/01/mix/fader", db_to_level(0.0))
+client.send("/ch/01/mix/pan", 0.5)  # 中央
+
+# EQ設定
+client.send("/ch/01/eq/on", 1)
+client.send("/ch/01/eq/2/f", freq_to_value(3000))
+client.send("/ch/01/eq/2/g", gain_db_to_value(5.0, -15, 15))
+```
+
+## 🎛️ 提供ツール（27ツール）
 
 ### 基本チャンネル操作（10ツール）
 
@@ -114,76 +243,95 @@ python -m x32_mcp.server http --host 127.0.0.1 --port 8000
 
 ※一部のResourcesはX32のOSC制限により未実装
 
-## テスト
+## 🧪 テスト
 
 ```bash
+# 依存関係をインストール
+pip install -e ".[dev]"
+
+# テストを実行
 pytest -q
 ```
 
 モックX32を起動した状態で実行すると、エンドツーエンドでの動作確認が可能です。
 
-## 設定
+## 🔒 セキュリティと堅牢性
 
-デフォルトでは `192.168.1.100:10023` に接続します。
-`src/x32_mcp/config.py` で `X32_IP` を実機/モックのIPアドレスに変更してください。
+- **IP固定**: 送信先IP/ポートは設定ファイルで固定（任意アドレスへの送信不可）
+- **入力バリデーション**: 範囲外の値や無効な入力は明示的にバリデーション
+- **レート制限**: 簡易レート制限を実装（短時間のsleep）
+- **エラーハンドリング**: 例外はユーザーフレンドリーなエラーメッセージに変換
+- **ログ管理**: STDIOモードではstderrにログ出力（MCP JSON破損防止）
 
-## 使用例
+## 🛠️ トラブルシューティング
 
-### Claude Desktopでの利用
+### MCPサーバーが接続されない
 
-MCPサーバーを設定後、自然言語でX32を操作できます：
+```bash
+# サーバーの接続状態を確認
+claude mcp list
 
-```
-「チャンネル1の名前をVocal 1にして、色を赤にして」
-→ set_channel_name(1, "Vocal 1"), set_channel_color(1, "RED")
-
-「チャンネル1のフェーダーを0dBにして、パンを中央にして」
-→ set_fader(1, 0.0), set_pan(1, 0)
-
-「チャンネル2のEQで、3kHzを+5dBブーストして」
-→ set_eq_enabled(2, true), set_eq_band(2, 2, 3000, 5.0, 1.0)
-
-「DCA1にVocalsと名前をつけて、フェーダーを-3dBに」
-→ set_dca_name(1, "Vocals"), set_dca_fader(1, -3.0)
-
-「メインLRフェーダーを-5dBに下げて」
-→ set_main_lr_fader(-5.0)
+# サーバーを再追加
+claude mcp remove x32-mcp
+claude mcp add x32-mcp --scope user --env PATH="$(pwd)/.venv/bin:/usr/local/bin:/usr/bin:/bin" -- python -m x32_mcp.server stdio
 ```
 
-### プログラムからの利用
+### X32に接続できない
 
-```python
-from x32_mcp.osc_client import X32Client
-from x32_mcp.conv import db_to_level
+1. X32とコンピュータが同じネットワークにいることを確認
+2. X32のIPアドレスを確認（Setup → Network画面で確認）
+3. `src/x32_mcp/config.py`のIPアドレスが正しいことを確認
+4. ファイアウォールでUDP 10023ポートが開いていることを確認
 
-client = X32Client(host="192.168.1.12", port=10023)
-client.start_xremote_keepalive()
+### モックX32サーバーが起動しない
 
-# チャンネル1を設定
-client.send("/ch/01/config/name", "Vocal 1")
-client.send("/ch/01/mix/fader", db_to_level(0.0))
-client.send("/ch/01/mix/pan", 0.5)  # 中央
+```bash
+# ポート10023が既に使用されていないか確認
+lsof -i :10023  # macOS/Linux
+netstat -an | grep 10023  # Windows
 
-# EQ設定
-client.send("/ch/01/eq/on", 1)
-client.send("/ch/01/eq/2/f", freq_to_value(3000))
-client.send("/ch/01/eq/2/g", gain_db_to_value(5.0, -15, 15))
+# 既存のプロセスを終了してから再起動
+python scripts/fake_x32.py
 ```
 
-## セキュリティと堅牢性
+## 🚧 今後の拡張予定
 
-- 送信先IP/ポートは設定ファイルで固定（任意アドレスへの送信不可）
-- 範囲外の値や無効な入力は明示的にバリデーション
-- 簡易レート制限を実装（短時間のsleep）
-- 例外はユーザーフレンドリーなエラーメッセージに変換
+- [ ] dB ⇄ level型の厳密な4レンジ変換（現在は線形近似）
+- [ ] DirectOutCh01〜32等、追加の出力ソースマッピング
+- [ ] Dynamics（コンプレッサー、ゲート）パラメータの制御
+- [ ] Effectsパラメータの制御
+- [ ] シーン/スナップショット管理
+- [ ] チャンネルリンク/グループ管理
+- [ ] メーター値の取得
 
-## 今後の拡張
+## 🤝 コントリビューション
 
-- dB ⇄ level型の厳密な4レンジ変換（現在は線形近似）
-- DirectOutCh01〜32等、追加の出力ソースマッピング
-- EQ、Dynamics、Effectsパラメータの制御
-- シーン/スナップショット管理
+Pull Requestを歓迎します！以下の手順でコントリビュートできます：
 
-## ライセンス
+1. このリポジトリをフォーク
+2. 新しいブランチを作成 (`git checkout -b feature/amazing-feature`)
+3. 変更をコミット (`git commit -m 'Add amazing feature'`)
+4. ブランチにプッシュ (`git push origin feature/amazing-feature`)
+5. Pull Requestを作成
 
-MIT
+## 📚 参考リンク
+
+- [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+- [FastMCP](https://github.com/jlowin/fastmcp)
+- [python-osc](https://github.com/attwad/python-osc)
+- [X32 OSC仕様（非公式）](https://sites.google.com/site/patrickmaillot/x32)
+- [Behringer X32公式サイト](https://www.behringer.com/product.html?modelCode=P0ASF)
+
+## 📝 ライセンス
+
+MIT License - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
+
+## 👤 作者
+
+**mackatwentytsuru**
+
+- GitHub: [@mackatwentytsuru](https://github.com/mackatwentytsuru)
+
+---
+
+⭐ このプロジェクトが役に立ったら、GitHubでスターをつけてください！

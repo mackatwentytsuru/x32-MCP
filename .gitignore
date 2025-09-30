@@ -16,9 +16,12 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual Environment
 .venv/
@@ -26,21 +29,28 @@ venv/
 ENV/
 env/
 
-# IDE
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# Claude Code
+.claude/
 
-# Logs
-*.log
+# Project specific
+*.bnk
+analyze_*.py
+fit_*.py
+manual_*.py
+read_*.py
+test_fader_*.py
+test_new_*.py
