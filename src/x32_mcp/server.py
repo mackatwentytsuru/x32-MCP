@@ -1285,6 +1285,84 @@ def set_card_output_level(card_out: int, level_db: float) -> str:
         return f"予期しないエラー: {e}"
 
 
+@mcp.tool()
+def get_usb_routing_status() -> str:
+    """
+    USB出力のルーティング状態を診断
+
+    現在のUSBルーティング設定を確認し、ストリーミング用の推奨設定と比較します。
+
+    Returns:
+        現在の設定状態と期待値の比較レポート
+    """
+    try:
+        client = get_client()
+
+        # 現在の設定を取得
+        card1_src = client.query_int("/config/routing/CARD/01")
+        card2_src = client.query_int("/config/routing/CARD/02")
+
+        user_out1_src = client.query_int("/config/userout/01/src")
+        user_out2_src = client.query_int("/config/userout/02/src")
+
+        out5_src = client.query_int("/outputs/main/05/src")
+        out6_src = client.query_int("/outputs/main/06/src")
+
+        # 期待値
+        expected_card1 = 60  # USER OUT 1
+        expected_card2 = 61  # USER OUT 2
+        expected_user1 = 36  # OUT 5
+        expected_user2 = 37  # OUT 6
+        expected_out5 = source_to_code("MainL")  # Main Left
+        expected_out6 = source_to_code("MainR")  # Main Right
+
+        # 結果をフォーマット
+        report = "📊 USB出力ルーティング診断\n\n"
+
+        # CARD設定
+        report += "【CARD → USER OUT】\n"
+        card1_ok = "✓" if card1_src == expected_card1 else "✗"
+        card2_ok = "✓" if card2_src == expected_card2 else "✗"
+        report += f"  {card1_ok} CARD 1: {card1_src} (期待値: {expected_card1} = USER OUT 1)\n"
+        report += f"  {card2_ok} CARD 2: {card2_src} (期待値: {expected_card2} = USER OUT 2)\n\n"
+
+        # USER OUT設定
+        report += "【USER OUT → 物理OUT】\n"
+        user1_ok = "✓" if user_out1_src == expected_user1 else "✗"
+        user2_ok = "✓" if user_out2_src == expected_user2 else "✗"
+        report += f"  {user1_ok} USER OUT 1: {user_out1_src} (期待値: {expected_user1} = OUT 5)\n"
+        report += f"  {user2_ok} USER OUT 2: {user_out2_src} (期待値: {expected_user2} = OUT 6)\n\n"
+
+        # 物理OUT設定
+        report += "【物理OUT → メイン信号】\n"
+        out5_ok = "✓" if out5_src == expected_out5 else "✗"
+        out6_ok = "✓" if out6_src == expected_out6 else "✗"
+        out5_name = code_to_source(out5_src) if out5_src >= 0 else "OFF"
+        out6_name = code_to_source(out6_src) if out6_src >= 0 else "OFF"
+        report += f"  {out5_ok} OUT 5: {out5_name} (期待値: Main Left)\n"
+        report += f"  {out6_ok} OUT 6: {out6_name} (期待値: Main Right)\n\n"
+
+        # 総合判定
+        all_ok = (card1_src == expected_card1 and card2_src == expected_card2 and
+                  user_out1_src == expected_user1 and user_out2_src == expected_user2 and
+                  out5_src == expected_out5 and out6_src == expected_out6)
+
+        if all_ok:
+            report += "✅ 総合判定: すべて正しく設定されています\n"
+            report += "   USB出力は Main L/R → OUT 5/6 → USER OUT 1/2 → CARD 1/2 → USB の経路で動作します"
+        else:
+            report += "⚠️ 総合判定: 一部の設定が推奨値と異なります\n"
+            report += "   setup_usb_output_for_streaming() を実行して正しく設定してください"
+
+        return report
+
+    except X32Error as e:
+        return f"エラー: {e}"
+    except Exception as e:
+        logger.exception("get_usb_routing_status内部エラー")
+        return f"予期しないエラー: {e}"
+
+
 # ========================================
 # CLI起動
 # ========================================
