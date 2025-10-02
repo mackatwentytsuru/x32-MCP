@@ -1286,80 +1286,181 @@ def set_card_output_level(card_out: int, level_db: float) -> str:
 
 
 @mcp.tool()
-def get_usb_routing_status() -> str:
+def get_channel_status(channel: int) -> str:
     """
-    USB出力のルーティング状態を診断
+    特定チャンネルの全設定情報を取得
 
-    現在のUSBルーティング設定を確認し、ストリーミング用の推奨設定と比較します。
+    Args:
+        channel: チャンネル番号（1〜32）
 
     Returns:
-        現在の設定状態と期待値の比較レポート
+        チャンネルの詳細設定情報（JSON形式の文字列）
     """
+    if not (1 <= channel <= 32):
+        return f"エラー: チャンネル番号は1〜32の範囲で指定してください（指定値: {channel}）"
+
     try:
         client = get_client()
+        ch = f"{channel:02d}"
 
-        # 現在の設定を取得
-        card1_src = client.query_int("/config/routing/CARD/01")
-        card2_src = client.query_int("/config/routing/CARD/02")
+        # 各種パラメータを取得
+        data = {
+            "channel": channel,
+            "config": {
+                "name": "N/A",  # X32はname取得未サポート
+                "color": "N/A",  # X32はcolor取得未サポート
+                "icon": "N/A",   # X32はicon取得未サポート
+            },
+            "preamp": {
+                "gain_db": round(value_to_gain_db(client.query_float(f"/ch/{ch}/preamp/gain"), -12.0, 60.0), 1),
+                "phantom_power": bool(client.query_int(f"/ch/{ch}/preamp/phantom")),
+            },
+            "mix": {
+                "fader_db": round(level_to_db(client.query_float(f"/ch/{ch}/mix/fader")), 1),
+                "pan": round(value_to_pan(client.query_float(f"/ch/{ch}/mix/pan")), 1),
+                "mute": bool(client.query_int(f"/ch/{ch}/mix/on") == 0),  # 0=mute, 1=unmute
+            },
+            "eq": {
+                "enabled": bool(client.query_int(f"/ch/{ch}/eq/on")),
+            }
+        }
 
-        user_out1_src = client.query_int("/config/userout/01/src")
-        user_out2_src = client.query_int("/config/userout/02/src")
-
-        out5_src = client.query_int("/outputs/main/05/src")
-        out6_src = client.query_int("/outputs/main/06/src")
-
-        # 期待値
-        expected_card1 = 60  # USER OUT 1
-        expected_card2 = 61  # USER OUT 2
-        expected_user1 = 36  # OUT 5
-        expected_user2 = 37  # OUT 6
-        expected_out5 = source_to_code("MainL")  # Main Left
-        expected_out6 = source_to_code("MainR")  # Main Right
-
-        # 結果をフォーマット
-        report = "📊 USB出力ルーティング診断\n\n"
-
-        # CARD設定
-        report += "【CARD → USER OUT】\n"
-        card1_ok = "✓" if card1_src == expected_card1 else "✗"
-        card2_ok = "✓" if card2_src == expected_card2 else "✗"
-        report += f"  {card1_ok} CARD 1: {card1_src} (期待値: {expected_card1} = USER OUT 1)\n"
-        report += f"  {card2_ok} CARD 2: {card2_src} (期待値: {expected_card2} = USER OUT 2)\n\n"
-
-        # USER OUT設定
-        report += "【USER OUT → 物理OUT】\n"
-        user1_ok = "✓" if user_out1_src == expected_user1 else "✗"
-        user2_ok = "✓" if user_out2_src == expected_user2 else "✗"
-        report += f"  {user1_ok} USER OUT 1: {user_out1_src} (期待値: {expected_user1} = OUT 5)\n"
-        report += f"  {user2_ok} USER OUT 2: {user_out2_src} (期待値: {expected_user2} = OUT 6)\n\n"
-
-        # 物理OUT設定
-        report += "【物理OUT → メイン信号】\n"
-        out5_ok = "✓" if out5_src == expected_out5 else "✗"
-        out6_ok = "✓" if out6_src == expected_out6 else "✗"
-        out5_name = code_to_source(out5_src) if out5_src >= 0 else "OFF"
-        out6_name = code_to_source(out6_src) if out6_src >= 0 else "OFF"
-        report += f"  {out5_ok} OUT 5: {out5_name} (期待値: Main Left)\n"
-        report += f"  {out6_ok} OUT 6: {out6_name} (期待値: Main Right)\n\n"
-
-        # 総合判定
-        all_ok = (card1_src == expected_card1 and card2_src == expected_card2 and
-                  user_out1_src == expected_user1 and user_out2_src == expected_user2 and
-                  out5_src == expected_out5 and out6_src == expected_out6)
-
-        if all_ok:
-            report += "✅ 総合判定: すべて正しく設定されています\n"
-            report += "   USB出力は Main L/R → OUT 5/6 → USER OUT 1/2 → CARD 1/2 → USB の経路で動作します"
-        else:
-            report += "⚠️ 総合判定: 一部の設定が推奨値と異なります\n"
-            report += "   setup_usb_output_for_streaming() を実行して正しく設定してください"
-
-        return report
+        import json
+        return json.dumps(data, indent=2, ensure_ascii=False)
 
     except X32Error as e:
         return f"エラー: {e}"
     except Exception as e:
-        logger.exception("get_usb_routing_status内部エラー")
+        logger.exception("get_channel_status内部エラー")
+        return f"予期しないエラー: {e}"
+
+
+@mcp.tool()
+def get_all_channels_status() -> str:
+    """
+    全チャンネル（1〜32）の設定情報を一括取得
+
+    Returns:
+        全チャンネルの詳細設定情報（JSON形式の文字列）
+    """
+    try:
+        client = get_client()
+        all_channels = []
+
+        for channel in range(1, 33):
+            ch = f"{channel:02d}"
+
+            try:
+                data = {
+                    "channel": channel,
+                    "preamp": {
+                        "gain_db": round(value_to_gain_db(client.query_float(f"/ch/{ch}/preamp/gain"), -12.0, 60.0), 1),
+                        "phantom_power": bool(client.query_int(f"/ch/{ch}/preamp/phantom")),
+                    },
+                    "mix": {
+                        "fader_db": round(level_to_db(client.query_float(f"/ch/{ch}/mix/fader")), 1),
+                        "pan": round(value_to_pan(client.query_float(f"/ch/{ch}/mix/pan")), 1),
+                        "mute": bool(client.query_int(f"/ch/{ch}/mix/on") == 0),
+                    },
+                    "eq": {
+                        "enabled": bool(client.query_int(f"/ch/{ch}/eq/on")),
+                    }
+                }
+                all_channels.append(data)
+            except Exception as e:
+                logger.warning(f"チャンネル{channel}の取得中にエラー: {e}")
+                all_channels.append({"channel": channel, "error": str(e)})
+
+        import json
+        return json.dumps({"channels": all_channels, "total": len(all_channels)}, indent=2, ensure_ascii=False)
+
+    except X32Error as e:
+        return f"エラー: {e}"
+    except Exception as e:
+        logger.exception("get_all_channels_status内部エラー")
+        return f"予期しないエラー: {e}"
+
+
+@mcp.tool()
+def get_mixer_snapshot() -> str:
+    """
+    ミキサー全体のスナップショット情報を取得
+
+    主要なバス、マトリクス、メイン出力、ルーティング設定を含む全体像を取得します。
+
+    Returns:
+        ミキサー全体の設定情報（JSON形式の文字列）
+    """
+    try:
+        client = get_client()
+
+        # バス情報
+        buses = []
+        for bus in range(1, 17):
+            buses.append({
+                "bus": bus,
+                "fader_db": round(level_to_db(client.query_float(f"/bus/{bus:02d}/mix/fader")), 1),
+                "mute": bool(client.query_int(f"/bus/{bus:02d}/mix/on") == 0),
+            })
+
+        # マトリクス情報
+        matrices = []
+        for mtx in range(1, 7):
+            matrices.append({
+                "matrix": mtx,
+                "fader_db": round(level_to_db(client.query_float(f"/mtx/{mtx:02d}/mix/fader")), 1),
+                "mute": bool(client.query_int(f"/mtx/{mtx:02d}/mix/on") == 0),
+            })
+
+        # メイン出力
+        main_lr = {
+            "fader_db": round(level_to_db(client.query_float("/main/st/mix/fader")), 1),
+            "mute": bool(client.query_int("/main/st/mix/on") == 0),
+        }
+
+        # 物理出力ルーティング（1-16）
+        outputs = []
+        for out in range(1, 17):
+            src_code = client.query_int(f"/outputs/main/{out:02d}/src")
+            outputs.append({
+                "output": out,
+                "source": code_to_source(src_code) if src_code >= 0 else "OFF"
+            })
+
+        # USB CARD ルーティング（1-8）
+        card_routing = []
+        for card in range(1, 9):
+            card_src = client.query_int(f"/config/routing/CARD/{card:02d}")
+            card_routing.append({
+                "card": card,
+                "source_code": card_src
+            })
+
+        # USER OUT ルーティング（1-4）
+        user_out_routing = []
+        for uo in range(1, 5):
+            uo_src = client.query_int(f"/config/userout/{uo:02d}/src")
+            user_out_routing.append({
+                "user_out": uo,
+                "source_code": uo_src
+            })
+
+        snapshot = {
+            "main_lr": main_lr,
+            "buses": buses,
+            "matrices": matrices,
+            "outputs": outputs,
+            "usb_card_routing": card_routing,
+            "user_out_routing": user_out_routing
+        }
+
+        import json
+        return json.dumps(snapshot, indent=2, ensure_ascii=False)
+
+    except X32Error as e:
+        return f"エラー: {e}"
+    except Exception as e:
+        logger.exception("get_mixer_snapshot内部エラー")
         return f"予期しないエラー: {e}"
 
 
