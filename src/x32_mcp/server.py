@@ -1095,6 +1095,181 @@ def get_routing(output_idx: int) -> str:
 
 
 # ========================================
+# USB出力設定ツール
+# ========================================
+
+@mcp.tool()
+def setup_usb_output_for_streaming() -> str:
+    """
+    USB出力をストリーミング/録音用に自動設定
+
+    この設定により、Main L/R → OUT 5/6 → USB Card 1/2 の経路が構築されます。
+    OBS StudioなどでUSBオーディオデバイスとして認識され、メイン出力がそのまま配信・録音できます。
+
+    設定内容:
+    - OUT 5 → Main Left に設定
+    - OUT 6 → Main Right に設定
+    - USB Card Out 1 → OUT 5 にルーティング
+    - USB Card Out 2 → OUT 6 にルーティング
+    - Card Out 1/2 のレベルを 0dB に設定
+
+    Returns:
+        設定完了メッセージまたはエラー
+
+    Note:
+        この設定後、パソコン側でUSBオーディオデバイス「X-USB」または「USB Audio CODEC」を
+        入力デバイスとして選択してください。
+    """
+    try:
+        client = get_client()
+
+        # Step 1: OUT 5/6 をMain L/R に設定
+        # X32のOUT 5は通常Main Leftに、OUT 6はMain Rightに既に割り当てられている
+        # 念のため確認・設定
+        client.send("/outputs/main/05/src", source_to_code("MainL"))
+        client.send("/outputs/main/06/src", source_to_code("MainR"))
+        logger.info("OUT 5 → Main Left, OUT 6 → Main Right に設定")
+
+        # Step 2: USB Card Out のルーティング設定
+        # /config/routing/OUT/01-08 は User Out 1-8 のルーティングソースを指定
+        # ここで OUT 5/6 を指定する（コード値: 4 = OUT 5, 5 = OUT 6）
+        client.send("/config/routing/OUT/01", 4)  # User Out 1 → OUT 5
+        client.send("/config/routing/OUT/02", 5)  # User Out 2 → OUT 6
+        logger.info("User Out 1 → OUT 5, User Out 2 → OUT 6 に設定")
+
+        # Step 3: USB Card Out のレベルを 0dB に設定
+        # /config/routing/OUT/01-08/level は User Out のレベル（0.0〜1.0）
+        client.send("/config/routing/OUT/01/level", db_to_level(0.0))
+        client.send("/config/routing/OUT/02/level", db_to_level(0.0))
+        logger.info("USB Card Out 1/2 のレベルを 0dB に設定")
+
+        return """✓ USB出力をストリーミング用に設定しました
+
+📋 設定内容:
+  - OUT 5 → Main Left
+  - OUT 6 → Main Right
+  - USB Card Out 1 → OUT 5
+  - USB Card Out 2 → OUT 6
+  - Card Out レベル: 0dB
+
+💻 次のステップ:
+  1. パソコンで「オーディオ設定」を開く
+  2. 入力デバイスで「X-USB」または「USB Audio CODEC」を選択
+  3. OBS Studioなどで音声入力デバイスを「USB」に設定
+  4. X32のメインフェーダーを動かして音声レベルが連動することを確認
+
+✅ これで X32 のメイン出力がパソコンにステレオで送られます"""
+
+    except X32Error as e:
+        return f"エラー: {e}"
+    except Exception as e:
+        logger.exception("setup_usb_output_for_streaming内部エラー")
+        return f"予期しないエラー: {e}"
+
+
+@mcp.tool()
+def set_card_output_routing(card_out: int, source: Literal["OFF", "MainL", "MainR", "MC", "Bus1", "Bus2", "Bus3", "Bus4", "Bus5", "Bus6", "Bus7", "Bus8", "Bus9", "Bus10", "Bus11", "Bus12", "Bus13", "Bus14", "Bus15", "Bus16", "Matrix1", "Matrix2", "Matrix3", "Matrix4", "Matrix5", "Matrix6", "OUT1", "OUT2", "OUT3", "OUT4", "OUT5", "OUT6", "OUT7", "OUT8", "OUT9", "OUT10", "OUT11", "OUT12", "OUT13", "OUT14", "OUT15", "OUT16"]) -> str:
+    """
+    USB Card出力のルーティングソースを個別設定
+
+    Args:
+        card_out: USBカード出力番号（1〜32）
+        source: ルーティングソース（"MainL", "MainR", "Bus1", "OUT5" など）
+
+    Returns:
+        成功メッセージまたはエラー
+
+    Note:
+        - Card Out 1-8 は User Out 1-8 に対応
+        - Card Out 9-16 は Aux Out 1-8 に対応
+        - Card Out 17-32 は P16 Out 1-16 に対応
+        通常のUSBストリーミングでは Card Out 1/2 のみ使用します。
+    """
+    if not (1 <= card_out <= 32):
+        return f"エラー: Card出力番号は1〜32の範囲で指定してください（指定値: {card_out}）"
+
+    try:
+        client = get_client()
+
+        # OUTx形式の場合、OUT番号を抽出（OUT5 → 4）
+        if source.startswith("OUT"):
+            out_num = int(source[3:])
+            if not (1 <= out_num <= 16):
+                return f"エラー: OUT番号は1〜16の範囲で指定してください（指定値: {source}）"
+            # OUT番号から内部コード値へ変換（OUT1=0, OUT2=1, ..., OUT16=15）
+            route_code = out_num - 1
+        else:
+            # MainL, Bus1 などの場合は source_to_code を使用
+            route_code = source_to_code(source)
+
+        # Card Out 1-8 の場合
+        if 1 <= card_out <= 8:
+            address = f"/config/routing/OUT/{card_out:02d}"
+            client.send(address, route_code)
+            logger.info(f"Card Out {card_out} → {source} に設定")
+            return f"✓ USB Card Out {card_out} を {source} にルーティングしました"
+
+        # Card Out 9-16 (Aux Out) の場合
+        elif 9 <= card_out <= 16:
+            aux_num = card_out - 8
+            address = f"/config/routing/AUX/{aux_num:02d}"
+            client.send(address, route_code)
+            logger.info(f"Card Out {card_out} (Aux {aux_num}) → {source} に設定")
+            return f"✓ USB Card Out {card_out} (Aux Out {aux_num}) を {source} にルーティングしました"
+
+        # Card Out 17-32 (P16) の場合
+        else:
+            p16_num = card_out - 16
+            address = f"/config/routing/P16/{p16_num:02d}"
+            client.send(address, route_code)
+            logger.info(f"Card Out {card_out} (P16 {p16_num}) → {source} に設定")
+            return f"✓ USB Card Out {card_out} (P16 Out {p16_num}) を {source} にルーティングしました"
+
+    except X32Error as e:
+        return f"エラー: {e}"
+    except Exception as e:
+        logger.exception("set_card_output_routing内部エラー")
+        return f"予期しないエラー: {e}"
+
+
+@mcp.tool()
+def set_card_output_level(card_out: int, level_db: float) -> str:
+    """
+    USB Card出力のレベルを設定
+
+    Args:
+        card_out: USBカード出力番号（1〜8）
+        level_db: レベル（-90.0 〜 +10.0 dB）
+
+    Returns:
+        成功メッセージまたはエラー
+
+    Note:
+        通常は 0dB（ユニティゲイン）に設定します。
+        Card Out 9以降のレベル設定は現在未対応です。
+    """
+    if not (1 <= card_out <= 8):
+        return f"エラー: Card出力番号は1〜8の範囲で指定してください（指定値: {card_out}）"
+
+    if not (-90.0 <= level_db <= 10.0):
+        return f"エラー: レベルは-90.0〜+10.0 dBの範囲で指定してください（指定値: {level_db}）"
+
+    try:
+        client = get_client()
+        level = db_to_level(level_db)
+        address = f"/config/routing/OUT/{card_out:02d}/level"
+        client.send(address, level)
+        logger.info(f"Card Out {card_out} のレベルを {level_db:.1f} dB に設定")
+        return f"✓ USB Card Out {card_out} のレベルを {level_db:.1f} dB に設定しました"
+
+    except X32Error as e:
+        return f"エラー: {e}"
+    except Exception as e:
+        logger.exception("set_card_output_level内部エラー")
+        return f"予期しないエラー: {e}"
+
+
+# ========================================
 # CLI起動
 # ========================================
 

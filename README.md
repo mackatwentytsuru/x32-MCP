@@ -146,6 +146,30 @@ MCPサーバーを設定後、Claude Code/Claude Desktopで自然言語でX32を
 🤖 → set_bus_fader(3, -10.0), set_bus_mute(3, true)
 ```
 
+### USB出力設定（ストリーミング・録音）
+
+```
+👤 「USB出力をストリーミング用に設定して」
+🤖 → setup_usb_output_for_streaming()
+
+✓ USB出力をストリーミング用に設定しました
+
+📋 設定内容:
+  - OUT 5 → Main Left
+  - OUT 6 → Main Right
+  - USB Card Out 1 → OUT 5
+  - USB Card Out 2 → OUT 6
+  - Card Out レベル: 0dB
+
+💻 次のステップ:
+  1. パソコンで「オーディオ設定」を開く
+  2. 入力デバイスで「X-USB」または「USB Audio CODEC」を選択
+  3. OBS Studioなどで音声入力デバイスを「USB」に設定
+  4. X32のメインフェーダーを動かして音声レベルが連動することを確認
+```
+
+この一つのコマンドで、X32のメイン出力がUSB経由でパソコンにステレオで送られるようになります。外部オーディオインターフェースは不要です！
+
 ## 🔧 高度な使用方法
 
 ### MCP Inspectorでの開発
@@ -187,7 +211,15 @@ client.send("/ch/01/eq/2/f", freq_to_value(3000))
 client.send("/ch/01/eq/2/g", gain_db_to_value(5.0, -15, 15))
 ```
 
-## 🎛️ 提供ツール（27ツール）
+## 🎛️ 提供ツール（30ツール）
+
+### USB出力設定（3ツール）⭐NEW
+
+- `setup_usb_output_for_streaming()` - USB出力を自動設定（ワンクリックセットアップ）
+- `set_card_output_routing(card_out, source)` - USB Card出力のルーティング個別設定
+- `set_card_output_level(card_out, level_db)` - USB Card出力レベル設定
+
+**ワンクリックセットアップ**: `setup_usb_output_for_streaming()` を実行するだけで、Main L/R → OUT 5/6 → USB Card 1/2 の経路が自動的に構築されます。OBS Studioなどで「USB」デバイスを選択すれば、すぐに配信・録音が可能です！
 
 ### 基本チャンネル操作（10ツール）
 
