@@ -1123,34 +1123,50 @@ def setup_usb_output_for_streaming() -> str:
     try:
         client = get_client()
 
-        # Step 1: OUT 5/6 をMain L/R に設定
-        # X32のOUT 5は通常Main Leftに、OUT 6はMain Rightに既に割り当てられている
-        # 念のため確認・設定
+        # ガイドに基づく設定手順：
+        # 1. CARD 1/2 → USER OUT に設定
+        # 2. USER OUT 1/2 → AUX OUT 5/6 に設定
+        # 3. AUX OUT 5/6（物理OUT 5/6）→ Main L/R に設定（通常デフォルト）
+
+        # Step 1: 物理OUT 5/6 をMain L/R に設定（MIX → MAIN で確認する設定）
+        # /outputs/main/05 と /outputs/main/06 が Main L/R のソース
         client.send("/outputs/main/05/src", source_to_code("MainL"))
         client.send("/outputs/main/06/src", source_to_code("MainR"))
-        logger.info("OUT 5 → Main Left, OUT 6 → Main Right に設定")
+        logger.info("物理OUT 5/6 → Main Left/Right に設定")
 
-        # Step 2: USB Card Out のルーティング設定
-        # /config/routing/OUT/01-08 は User Out 1-8 のルーティングソースを指定
-        # ここで OUT 5/6 を指定する（コード値: 4 = OUT 5, 5 = OUT 6）
-        client.send("/config/routing/OUT/01", 4)  # User Out 1 → OUT 5
-        client.send("/config/routing/OUT/02", 5)  # User Out 2 → OUT 6
-        logger.info("User Out 1 → OUT 5, User Out 2 → OUT 6 に設定")
+        # Step 2: USER OUT 1/2 を AUX OUT 5/6 に設定（USER → USER OUT メニュー）
+        # /config/userout/01-04/src でUSER OUT 1-4のソースを指定
+        # AUX OUT 5 = コード値 36 (OUT 5), AUX OUT 6 = コード値 37 (OUT 6)
+        # OUT 1-16 のコード値は 32-47 (OUT1=32, OUT2=33, ..., OUT16=47)
+        client.send("/config/userout/01/src", 36)  # USER OUT 1 → OUT 5
+        client.send("/config/userout/02/src", 37)  # USER OUT 2 → OUT 6
+        logger.info("USER OUT 1/2 → AUX OUT 5/6（物理OUT 5/6）に設定")
 
-        # Step 3: USB Card Out のレベルを 0dB に設定
-        # /config/routing/OUT/01-08/level は User Out のレベル（0.0〜1.0）
-        client.send("/config/routing/OUT/01/level", db_to_level(0.0))
-        client.send("/config/routing/OUT/02/level", db_to_level(0.0))
-        logger.info("USB Card Out 1/2 のレベルを 0dB に設定")
+        # Step 3: CARD 1/2 のソースを USER OUT に設定（CARD メニュー）
+        # /config/routing/CARD/01-32 でカード出力のソースを指定
+        # USER OUT のコード値: USER OUT 1 = 60, USER OUT 2 = 61
+        client.send("/config/routing/CARD/01", 60)  # CARD 1 → USER OUT 1
+        client.send("/config/routing/CARD/02", 61)  # CARD 2 → USER OUT 2
+        logger.info("CARD 1/2 → USER OUT 1/2 に設定")
+
+        # Step 4: CARD出力レベルを 0dB に設定
+        client.send("/config/routing/CARD/01/level", db_to_level(0.0))
+        client.send("/config/routing/CARD/02/level", db_to_level(0.0))
+        logger.info("CARD 1/2 のレベルを 0dB に設定")
 
         return """✓ USB出力をストリーミング用に設定しました
 
+📋 信号の流れ:
+  マイク入力 → Main L/R → 物理OUT 5/6 → USER OUT 1/2 → CARD 1/2 → USB → パソコン
+
 📋 設定内容:
-  - OUT 5 → Main Left
-  - OUT 6 → Main Right
-  - USB Card Out 1 → OUT 5
-  - USB Card Out 2 → OUT 6
-  - Card Out レベル: 0dB
+  - 物理OUT 5 → Main Left
+  - 物理OUT 6 → Main Right
+  - USER OUT 1 → 物理OUT 5
+  - USER OUT 2 → 物理OUT 6
+  - CARD 1 → USER OUT 1
+  - CARD 2 → USER OUT 2
+  - CARD レベル: 0dB
 
 💻 次のステップ:
   1. パソコンで「オーディオ設定」を開く
@@ -1158,7 +1174,7 @@ def setup_usb_output_for_streaming() -> str:
   3. OBS Studioなどで音声入力デバイスを「USB」に設定
   4. X32のメインフェーダーを動かして音声レベルが連動することを確認
 
-✅ これで X32 のメイン出力がパソコンにステレオで送られます"""
+✅ これで X32 のメイン出力がUSB経由でパソコンにステレオで送られます"""
 
     except X32Error as e:
         return f"エラー: {e}"
