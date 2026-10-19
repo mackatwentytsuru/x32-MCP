@@ -14,6 +14,10 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that l
 
 You talk to the assistant ("set channel 1 to -3 dB and name it Vocal 1"), and the assistant calls these tools, which send OSC messages to the mixer.
 
+> **Maintenance note:** The author no longer owns the hardware (Behringer X32), so updates will be slow and hardware testing is not possible. Issues and pull requests are still welcome.
+
+> **メンテナンスについて:** 作者は現在この機材(Behringer X32)を持っていないため、更新はゆっくりになり、実機での確認はできません。Issue や Pull Request は歓迎します。
+
 ### Features
 
 - 31 tools: faders, mutes, pan, preamp gain, phantom power, 4-band EQ, bus sends, buses, matrices, Aux In, Main LR, DCA groups, output routing, USB (card) output setup, and read-only status queries
