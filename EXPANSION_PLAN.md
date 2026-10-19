@@ -1,3 +1,6 @@
+> Historical planning notes (written early in the project). Many items below are already implemented. See README.md for the current tool list.
+> 初期の計画メモです。多くはすでに実装済みです。今のツールの一覧は README.md を見てください。
+
 # X32 MCP 拡張可能な機能リスト
 
 ## 現在実装済みのツール

@@ -54,3 +54,9 @@ manual_*.py
 read_*.py
 test_fader_*.py
 test_new_*.py
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+*.log

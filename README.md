@@ -1,369 +1,309 @@
 # X32 MCP Server
 
+[English](#english) | [日本語](#日本語)
+
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-server-green.svg)](https://modelcontextprotocol.io/)
 
-Behringer X32 デジタルミキサーを**自然言語エージェント（Claude Code/Claude Desktop/ChatGPT等）**から操作するための[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバー実装です。
+---
 
-AIアシスタントと会話するだけで、X32の設定変更やミキシング操作を自動化できます。
+## English
 
-## ✨ 特徴
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets an AI assistant (Claude Code, Claude Desktop, or any MCP client) control a **Behringer X32** digital mixer over OSC. It was built with Claude Code.
 
-- 🎛️ **包括的なX32制御** - フェーダー、EQ、ルーティング、DCAなど27種類の操作ツールを提供
-- 🤖 **自然言語操作** - 「チャンネル1のフェーダーを-3dBに」といった指示で操作可能
-- 🔌 **FastMCP + python-osc** - OSC over UDP (port 10023) による高速通信
-- 🌐 **複数トランスポート対応** - STDIO（Claude Desktop/Claude Code）とStreamable HTTP（Web統合）の両方をサポート
-- ♻️ **自動keepalive** - X32との接続を維持（/xremoteを8秒間隔で自動送信）
-- 🧪 **モックX32同梱** - 実機なしでの開発・テストが可能
-- 🔒 **セキュリティ設計** - IP固定、入力バリデーション、レート制限を実装
+You talk to the assistant ("set channel 1 to -3 dB and name it Vocal 1"), and the assistant calls these tools, which send OSC messages to the mixer.
 
-## 📋 必要要件
+### Features
 
-- Python 3.11 以上
-- Behringer X32/X32 Rack/M32 デジタルミキサー（または互換エミュレーター）
-- ネットワーク接続（UDP 10023番ポート）
+- 31 tools: faders, mutes, pan, preamp gain, phantom power, 4-band EQ, bus sends, buses, matrices, Aux In, Main LR, DCA groups, output routing, USB (card) output setup, and read-only status queries
+- 8 read-only MCP resources (fader, pan, gain, mute, phantom power, channel name and color, output routing)
+- OSC over UDP (default port 10023) with python-osc and FastMCP
+- Automatic `/xremote` keepalive (every 8 seconds) to stay subscribed to the mixer
+- STDIO transport (Claude Code, Claude Desktop). An HTTP command also exists (see [Limitations](#limitations))
+- A mock X32 (`scripts/fake_x32.py`) so you can develop and test without a mixer
+- The destination IP/port is fixed by configuration, and values are range-checked before they are sent
 
-## 🚀 クイックスタート
+### Requirements
 
-### 1. インストール
+- Python 3.11 or newer
+- A Behringer X32 / X32 Rack / M32, or the bundled mock server
+- Network access to the mixer on UDP port 10023
+
+### Install
 
 ```bash
-# リポジトリをクローン
 git clone https://github.com/mackatwentytsuru/x32-MCP.git
 cd x32-MCP
-
-# 仮想環境を作成してアクティベート
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# 依存関係をインストール
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-### 2. X32のIPアドレスを設定
+### Configure the mixer address
 
-`src/x32_mcp/config.py`を編集して、X32のIPアドレスを設定：
-
-```python
-X32_IP = "192.168.1.12"  # あなたのX32のIPアドレスに変更
-X32_PORT = 10023
-```
-
-### 3. Claude CodeまたはClaude Desktopで使用
-
-#### Claude Codeで使用する場合
+Set the IP address of your X32 with an environment variable (the default `192.168.1.100` is only a placeholder):
 
 ```bash
-# ユーザースコープで追加（すべてのプロジェクトで利用可能）
-claude mcp add x32-mcp --scope user --env PATH="$(pwd)/.venv/bin:/usr/local/bin:/usr/bin:/bin" -- python -m x32_mcp.server stdio
-
-# プロジェクトスコープで追加（このプロジェクトのみで利用可能）
-claude mcp add x32-mcp --scope project --env PATH="$(pwd)/.venv/bin:/usr/local/bin:/usr/bin:/bin" -- python -m x32_mcp.server stdio
+export X32_IP=192.168.1.50       # your X32's address (X32 Setup > Network)
+export X32_PORT=10023            # optional
 ```
 
-Claude Codeを再起動すると、X32操作ツールが利用可能になります。
+The values are read in `src/x32_mcp/config.py`.
 
-#### Claude Desktopで使用する場合
+### Use it with Claude Code
 
-`~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）または
-`%APPDATA%\Claude\claude_desktop_config.json`（Windows）に以下を追加：
+```bash
+# macOS / Linux (user scope: available in every project)
+claude mcp add x32-mcp --scope user \
+  --env X32_IP=192.168.1.50 \
+  -- "$(pwd)/.venv/bin/python" -m x32_mcp.server stdio
+```
+
+On Windows, point the command at `.venv\Scripts\python.exe` instead. Restart Claude Code and the X32 tools appear.
+
+### Use it with Claude Desktop
+
+Add this to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`):
 
 ```json
 {
   "mcpServers": {
     "x32-mcp": {
-      "command": "python",
+      "command": "/path/to/x32-MCP/.venv/bin/python",
       "args": ["-m", "x32_mcp.server", "stdio"],
-      "cwd": "/path/to/x32-MCP",
-      "env": {
-        "PATH": "/path/to/x32-MCP/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-      }
+      "env": { "X32_IP": "192.168.1.50" }
     }
   }
 }
 ```
 
-Claude Desktopを再起動してください。
-
-### 4. 開発・テスト用（オプション）
-
-実機がない場合は、モックX32サーバーを使用できます：
+### Try it without a mixer
 
 ```bash
-# 別ターミナルでモックX32を起動
+# terminal 1: start the mock X32 (listens on UDP 10023)
 python scripts/fake_x32.py
 
-# テストを実行
+# terminal 2: point the server at the mock and run the tests
 pip install -e ".[dev]"
-pytest -q
+X32_IP=127.0.0.1 pytest -q       # PowerShell: $env:X32_IP="127.0.0.1"; pytest -q
 ```
 
-## 💬 使用例
+### Example requests
 
-MCPサーバーを設定後、Claude Code/Claude Desktopで自然言語でX32を操作できます：
+| You say | Tool calls |
+|---|---|
+| "Name channel 1 Vocal 1 and make it red" | `set_channel_name(1, "Vocal 1")`, `set_channel_color(1, "RED")` |
+| "Fader of channel 1 to 0 dB, pan center" | `set_fader(1, 0.0)`, `set_pan(1, 0)` |
+| "Boost 3 kHz on channel 2 by 5 dB" | `set_eq_enabled(2, true)`, `set_eq_band(2, 2, 3000, 5.0, 1.0)` |
+| "Name DCA 1 Vocals and set it to -3 dB" | `set_dca_name(1, "Vocals")`, `set_dca_fader(1, -3.0)` |
+| "Send the main mix to the computer over USB" | `setup_usb_output_for_streaming()` |
 
-### 基本操作
+`setup_usb_output_for_streaming()` routes Main L/R to OUT 5/6 and then to USB card outputs 1/2, so that streaming software can pick the mixer up as a USB audio device.
 
-```
-👤 「チャンネル1の名前をVocal 1にして、色を赤にして」
-🤖 → set_channel_name(1, "Vocal 1"), set_channel_color(1, "RED")
+### Tools
 
-👤 「チャンネル1のフェーダーを0dBにして、パンを中央にして」
-🤖 → set_fader(1, 0.0), set_pan(1, 0)
+**Channel** (10): `set_fader` (-90 to +10 dB), `set_mute`, `set_pan` (-100 to +100), `set_channel_name`, `set_channel_color`, `set_channel_icon`, `set_gain` (-12 to +60 dB), `set_phantom_power`, `set_bus_send`, `route_output`
 
-👤 「チャンネル2をミュートして」
-🤖 → set_mute(2, true)
-```
+**EQ** (3): `set_eq_enabled`, `set_eq_band` (band 1-4, 20-20000 Hz, -15 to +15 dB, Q 0.3-10), `reset_eq`
 
-### EQ調整
+**Bus, matrix, Aux In, Main LR** (8): `set_bus_fader`, `set_bus_mute`, `set_matrix_fader`, `set_matrix_mute`, `set_auxin_fader`, `set_auxin_mute`, `set_main_lr_fader`, `set_main_lr_mute`
 
-```
-👤 「チャンネル2のEQで、3kHzを+5dBブーストして」
-🤖 → set_eq_enabled(2, true), set_eq_band(2, 2, 3000, 5.0, 1.0)
+**DCA** (4): `set_dca_fader`, `set_dca_mute`, `set_dca_name`, `set_dca_color`
 
-👤 「チャンネル1のEQをリセットして」
-🤖 → reset_eq(1)
-```
+**USB output** (3): `setup_usb_output_for_streaming`, `set_card_output_routing`, `set_card_output_level`
 
-### DCAグループ
+**Status queries** (3): `get_channel_status`, `get_all_channels_status`, `get_mixer_snapshot`
 
-```
-👤 「DCA1にVocalsと名前をつけて、フェーダーを-3dBに」
-🤖 → set_dca_name(1, "Vocals"), set_dca_fader(1, -3.0)
+**Resources** (8, `x32://...`): `get_fader`, `get_pan`, `get_gain`, `get_mute_status`, `get_phantom_power`, `get_routing`, `get_channel_name`, `get_channel_color`
 
-👤 「DCA1を黄色にして」
-🤖 → set_dca_color(1, "YELLOW")
-```
+See `src/x32_mcp/server.py` for the exact arguments.
 
-### マスター操作
+### Safety: this changes a real mixer
 
-```
-👤 「メインLRフェーダーを-5dBに下げて」
-🤖 → set_main_lr_fader(-5.0)
+- These tools change the live state of the mixer immediately and do not ask for confirmation. A wrong request can raise a fader on a live PA or send phantom power (+48 V) to a microphone that does not want it. Do not use it with a live audience unless you are watching the mixer yourself.
+- Try new requests with the mock server first.
+- There is no authentication. Keep the mixer on a trusted network and do not expose the MCP server to the internet.
 
-👤 「バス3のフェーダーを-10dBにして、ミュートして」
-🤖 → set_bus_fader(3, -10.0), set_bus_mute(3, true)
-```
+### Limitations
 
-### USB出力設定（ストリーミング・録音）
+- The dB-to-level conversion is a linear approximation, not the exact four-range curve of the X32. Fader values can be slightly off.
+- Not implemented yet: dynamics (compressor, gate), effects parameters, scenes and snapshots, channel linking, meters, more output sources.
+- Some channel reads (name, color) depend on what the X32's OSC interface returns and may not work on every firmware.
+- The `http` command (`python -m x32_mcp.server http --host 127.0.0.1 --port 8000`) has no authentication and was not verified for this release. Keep it on localhost, or use STDIO.
+- Tested against the bundled mock server. It has not been through a systematic test on every X32 firmware.
+- Unofficial. Not affiliated with or endorsed by Behringer / Music Tribe. "Behringer" and "X32" are trademarks of their owners.
 
-```
-👤 「USB出力をストリーミング用に設定して」
-🤖 → setup_usb_output_for_streaming()
+### Troubleshooting
 
-✓ USB出力をストリーミング用に設定しました
+- **The server does not connect:** run `claude mcp list`. Remove and add it again with `claude mcp remove x32-mcp`.
+- **The mixer does not answer:** check that the computer and the X32 are on the same network, that `X32_IP` is correct, and that UDP 10023 is not blocked by a firewall.
+- **The mock does not start:** another program may already use port 10023 (`netstat -an | findstr 10023` on Windows, `lsof -i :10023` on macOS/Linux).
+- **STDIO mode:** never print to stdout in the server code. It would corrupt the MCP stream. Logs go to stderr.
 
-📋 設定内容:
-  - OUT 5 → Main Left
-  - OUT 6 → Main Right
-  - USB Card Out 1 → OUT 5
-  - USB Card Out 2 → OUT 6
-  - Card Out レベル: 0dB
-
-💻 次のステップ:
-  1. パソコンで「オーディオ設定」を開く
-  2. 入力デバイスで「X-USB」または「USB Audio CODEC」を選択
-  3. OBS Studioなどで音声入力デバイスを「USB」に設定
-  4. X32のメインフェーダーを動かして音声レベルが連動することを確認
-```
-
-この一つのコマンドで、X32のメイン出力がUSB経由でパソコンにステレオで送られるようになります。外部オーディオインターフェースは不要です！
-
-## 🔧 高度な使用方法
-
-### MCP Inspectorでの開発
+### Development
 
 ```bash
-mcp dev src/x32_mcp/server.py
-# または
-uv run mcp dev src/x32_mcp/server.py
+mcp dev src/x32_mcp/server.py     # MCP Inspector
 ```
 
-> **重要**: STDIOモードでは `stdout` への出力は厳禁です（MCP JSON破損防止）。ログは自動的に `stderr` に出力されます。
+`EXPANSION_PLAN.md` holds old planning notes in Japanese. They are historical, so rely on this README for the current tool list.
 
-### Streamable HTTPモード
+### License
 
-Web統合やカスタムクライアント向け：
+MIT. See [LICENSE](LICENSE). Author: Yuki Tsuruoka ([@mackatwentytsuru](https://github.com/mackatwentytsuru)).
 
-```bash
-python -m x32_mcp.server http --host 127.0.0.1 --port 8000
-```
+### References
 
-### Pythonプログラムから直接使用
-
-```python
-from x32_mcp.osc_client import X32Client
-from x32_mcp.conv import db_to_level
-
-# X32に接続
-client = X32Client(host="192.168.1.12", port=10023)
-client.start_xremote_keepalive()
-
-# チャンネル1を設定
-client.send("/ch/01/config/name", "Vocal 1")
-client.send("/ch/01/mix/fader", db_to_level(0.0))
-client.send("/ch/01/mix/pan", 0.5)  # 中央
-
-# EQ設定
-client.send("/ch/01/eq/on", 1)
-client.send("/ch/01/eq/2/f", freq_to_value(3000))
-client.send("/ch/01/eq/2/g", gain_db_to_value(5.0, -15, 15))
-```
-
-## 🎛️ 提供ツール（30ツール）
-
-### USB出力設定（3ツール）⭐NEW
-
-- `setup_usb_output_for_streaming()` - USB出力を自動設定（ワンクリックセットアップ）
-- `set_card_output_routing(card_out, source)` - USB Card出力のルーティング個別設定
-- `set_card_output_level(card_out, level_db)` - USB Card出力レベル設定
-
-**ワンクリックセットアップ**: `setup_usb_output_for_streaming()` を実行するだけで、Main L/R → OUT 5/6 → USB Card 1/2 の経路が自動的に構築されます。OBS Studioなどで「USB」デバイスを選択すれば、すぐに配信・録音が可能です！
-
-### 基本チャンネル操作（10ツール）
-
-- `set_fader(channel, volume_db)` - フェーダーレベル設定（-90〜+10 dB）
-- `set_mute(channel, mute)` - ミュート設定
-- `set_pan(channel, pan)` - パン設定（-100=左, 0=中央, +100=右）
-- `set_channel_name(channel, name)` - チャンネル名設定
-- `set_channel_color(channel, color)` - 色設定（RED/GREEN/YELLOW/BLUE等）
-- `set_channel_icon(channel, icon)` - アイコン設定（Mic/Guitar/Piano等）
-- `set_gain(channel, gain_db)` - プリアンプゲイン設定（-12〜+60 dB）
-- `set_phantom_power(channel, enabled)` - ファンタム電源ON/OFF
-- `set_bus_send(channel, bus, level_db)` - バス送りレベル設定
-- `route_output(output_idx, source)` - 出力ルーティング設定
-
-### EQ制御（3ツール）
-
-- `set_eq_enabled(channel, enabled)` - EQ ON/OFF
-- `set_eq_band(channel, band, freq_hz, gain_db, q)` - 4バンドパラメトリックEQ設定
-  - band: 1〜4
-  - freq_hz: 20〜20000 Hz
-  - gain_db: -15〜+15 dB
-  - q: 0.3〜10.0
-- `reset_eq(channel)` - EQリセット（全バンド0dB）
-
-### Bus・Matrix・Main LR（8ツール）
-
-- `set_bus_fader(bus, level_db)` - バスフェーダー設定（1〜16）
-- `set_bus_mute(bus, mute)` - バスミュート設定
-- `set_matrix_fader(matrix, level_db)` - Matrixフェーダー設定（1〜6）
-- `set_matrix_mute(matrix, mute)` - Matrixミュート設定
-- `set_auxin_fader(auxin, level_db)` - AuxInフェーダー設定（1〜8）
-- `set_auxin_mute(auxin, mute)` - AuxInミュート設定
-- `set_main_lr_fader(level_db)` - メインLRフェーダー設定
-- `set_main_lr_mute(mute)` - メインLRミュート設定
-
-### DCAグループ（4ツール）
-
-- `set_dca_fader(dca, level_db)` - DCAフェーダー設定（1〜8）
-- `set_dca_mute(dca, mute)` - DCAミュート設定
-- `set_dca_name(dca, name)` - DCA名設定
-- `set_dca_color(dca, color)` - DCA色設定
-
-### Resources（取得系・8ツール）
-
-- `get_fader(channel)` - フェーダーレベル取得
-- `get_pan(channel)` - パン取得
-- `get_gain(channel)` - ゲイン取得
-- `get_mute_status(channel)` - ミュート状態取得
-- `get_phantom_power(channel)` - ファンタム電源状態取得
-- `get_routing(output_idx)` - 出力ルーティング取得
-- `get_channel_name(channel)` - チャンネル名取得※
-- `get_channel_color(channel)` - チャンネル色取得※
-
-※一部のResourcesはX32のOSC制限により未実装
-
-## 🧪 テスト
-
-```bash
-# 依存関係をインストール
-pip install -e ".[dev]"
-
-# テストを実行
-pytest -q
-```
-
-モックX32を起動した状態で実行すると、エンドツーエンドでの動作確認が可能です。
-
-## 🔒 セキュリティと堅牢性
-
-- **IP固定**: 送信先IP/ポートは設定ファイルで固定（任意アドレスへの送信不可）
-- **入力バリデーション**: 範囲外の値や無効な入力は明示的にバリデーション
-- **レート制限**: 簡易レート制限を実装（短時間のsleep）
-- **エラーハンドリング**: 例外はユーザーフレンドリーなエラーメッセージに変換
-- **ログ管理**: STDIOモードではstderrにログ出力（MCP JSON破損防止）
-
-## 🛠️ トラブルシューティング
-
-### MCPサーバーが接続されない
-
-```bash
-# サーバーの接続状態を確認
-claude mcp list
-
-# サーバーを再追加
-claude mcp remove x32-mcp
-claude mcp add x32-mcp --scope user --env PATH="$(pwd)/.venv/bin:/usr/local/bin:/usr/bin:/bin" -- python -m x32_mcp.server stdio
-```
-
-### X32に接続できない
-
-1. X32とコンピュータが同じネットワークにいることを確認
-2. X32のIPアドレスを確認（Setup → Network画面で確認）
-3. `src/x32_mcp/config.py`のIPアドレスが正しいことを確認
-4. ファイアウォールでUDP 10023ポートが開いていることを確認
-
-### モックX32サーバーが起動しない
-
-```bash
-# ポート10023が既に使用されていないか確認
-lsof -i :10023  # macOS/Linux
-netstat -an | grep 10023  # Windows
-
-# 既存のプロセスを終了してから再起動
-python scripts/fake_x32.py
-```
-
-## 🚧 今後の拡張予定
-
-- [ ] dB ⇄ level型の厳密な4レンジ変換（現在は線形近似）
-- [ ] DirectOutCh01〜32等、追加の出力ソースマッピング
-- [ ] Dynamics（コンプレッサー、ゲート）パラメータの制御
-- [ ] Effectsパラメータの制御
-- [ ] シーン/スナップショット管理
-- [ ] チャンネルリンク/グループ管理
-- [ ] メーター値の取得
-
-## 🤝 コントリビューション
-
-Pull Requestを歓迎します！以下の手順でコントリビュートできます：
-
-1. このリポジトリをフォーク
-2. 新しいブランチを作成 (`git checkout -b feature/amazing-feature`)
-3. 変更をコミット (`git commit -m 'Add amazing feature'`)
-4. ブランチにプッシュ (`git push origin feature/amazing-feature`)
-5. Pull Requestを作成
-
-## 📚 参考リンク
-
-- [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+- [Model Context Protocol](https://modelcontextprotocol.io/)
 - [FastMCP](https://github.com/jlowin/fastmcp)
 - [python-osc](https://github.com/attwad/python-osc)
-- [X32 OSC仕様（非公式）](https://sites.google.com/site/patrickmaillot/x32)
-- [Behringer X32公式サイト](https://www.behringer.com/product.html?modelCode=P0ASF)
-
-## 📝 ライセンス
-
-MIT License - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
-
-## 👤 作者
-
-**mackatwentytsuru**
-
-- GitHub: [@mackatwentytsuru](https://github.com/mackatwentytsuru)
+- [Unofficial X32 OSC documentation](https://sites.google.com/site/patrickmaillot/x32)
 
 ---
 
-⭐ このプロジェクトが役に立ったら、GitHubでスターをつけてください！
+## 日本語
+
+Behringer X32 デジタルミキサーを、AI アシスタント(Claude Code・Claude Desktop など MCP に対応したもの)から OSC で動かすための [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) サーバーです。Claude Code で作りました。
+
+アシスタントに「チャンネル1のフェーダーを -3dB にして、名前を Vocal 1 に」と話しかけると、アシスタントがこのサーバーの道具(ツール)を呼び、ミキサーに OSC のメッセージが届きます。
+
+### できること
+
+- 31 個のツール: フェーダー、ミュート、パン、プリアンプのゲイン、ファンタム電源、4バンド EQ、バス送り、バス、マトリクス、Aux In、メイン LR、DCA グループ、出力のルーティング、USB(カード)出力の設定、読み取り専用の状態の問い合わせ
+- 読み取り専用の MCP リソース 8 個(フェーダー、パン、ゲイン、ミュート、ファンタム電源、チャンネル名と色、出力ルーティング)
+- OSC over UDP(標準のポートは 10023)。python-osc と FastMCP を使用
+- `/xremote` を 8 秒ごとに自動で送り、ミキサーとの接続を保つ
+- STDIO で動きます(Claude Code・Claude Desktop)。HTTP のコマンドもありますが、[できないこと・気をつけること](#できないこと気をつけること)を見てください
+- 実機なしで開発・テストできるモック X32(`scripts/fake_x32.py`)つき
+- 送信先の IP とポートは設定で固定。送る前に値の範囲を確かめます
+
+### 必要な物
+
+- Python 3.11 以上
+- Behringer X32 / X32 Rack / M32(または同梱のモック)
+- ミキサーへ UDP 10023 番ポートで届くネットワーク
+
+### 入れ方
+
+```bash
+git clone https://github.com/mackatwentytsuru/x32-MCP.git
+cd x32-MCP
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e .
+```
+
+### ミキサーの宛先を決める
+
+X32 の IP アドレスを環境変数で指定します(初期値の `192.168.1.100` は見本です)。
+
+```bash
+export X32_IP=192.168.1.50       # あなたの X32 のアドレス(X32 の Setup > Network で確認)
+export X32_PORT=10023            # 省略できます
+```
+
+読み込む場所は `src/x32_mcp/config.py` です。
+
+### Claude Code で使う
+
+```bash
+# macOS / Linux(ユーザー範囲: すべてのプロジェクトで使える)
+claude mcp add x32-mcp --scope user \
+  --env X32_IP=192.168.1.50 \
+  -- "$(pwd)/.venv/bin/python" -m x32_mcp.server stdio
+```
+
+Windows では、コマンドを `.venv\Scripts\python.exe` にしてください。Claude Code を再起動すると、X32 のツールが使えます。
+
+### Claude Desktop で使う
+
+`claude_desktop_config.json`(macOS は `~/Library/Application Support/Claude/`、Windows は `%APPDATA%\Claude\`)に次を足します。
+
+```json
+{
+  "mcpServers": {
+    "x32-mcp": {
+      "command": "/path/to/x32-MCP/.venv/bin/python",
+      "args": ["-m", "x32_mcp.server", "stdio"],
+      "env": { "X32_IP": "192.168.1.50" }
+    }
+  }
+}
+```
+
+### ミキサーなしで試す
+
+```bash
+# 端末1: モック X32 を起動(UDP 10023 で待ち受けます)
+python scripts/fake_x32.py
+
+# 端末2: モックに向けて、テストを動かす
+pip install -e ".[dev]"
+X32_IP=127.0.0.1 pytest -q       # PowerShell: $env:X32_IP="127.0.0.1"; pytest -q
+```
+
+### 話しかけ方の例
+
+| 話しかけ | 呼ばれるツール |
+|---|---|
+| 「チャンネル1の名前を Vocal 1 にして、色を赤に」 | `set_channel_name(1, "Vocal 1")`, `set_channel_color(1, "RED")` |
+| 「チャンネル1のフェーダーを 0dB、パンを中央に」 | `set_fader(1, 0.0)`, `set_pan(1, 0)` |
+| 「チャンネル2の EQ で 3kHz を +5dB 持ち上げて」 | `set_eq_enabled(2, true)`, `set_eq_band(2, 2, 3000, 5.0, 1.0)` |
+| 「DCA1 に Vocals と名前をつけて -3dB に」 | `set_dca_name(1, "Vocals")`, `set_dca_fader(1, -3.0)` |
+| 「メインを USB でパソコンへ送って」 | `setup_usb_output_for_streaming()` |
+
+`setup_usb_output_for_streaming()` は、Main L/R を OUT 5/6 に、そこから USB カード出力 1/2 に回します。配信ソフトが、ミキサーを USB のオーディオ機器として選べるようになります。
+
+### ツール
+
+- チャンネル(10): `set_fader`(-90〜+10 dB)、`set_mute`、`set_pan`(-100〜+100)、`set_channel_name`、`set_channel_color`、`set_channel_icon`、`set_gain`(-12〜+60 dB)、`set_phantom_power`、`set_bus_send`、`route_output`
+- EQ(3): `set_eq_enabled`、`set_eq_band`(バンド 1〜4、20〜20000 Hz、-15〜+15 dB、Q 0.3〜10)、`reset_eq`
+- バス・マトリクス・Aux In・メイン LR(8): `set_bus_fader`、`set_bus_mute`、`set_matrix_fader`、`set_matrix_mute`、`set_auxin_fader`、`set_auxin_mute`、`set_main_lr_fader`、`set_main_lr_mute`
+- DCA(4): `set_dca_fader`、`set_dca_mute`、`set_dca_name`、`set_dca_color`
+- USB 出力(3): `setup_usb_output_for_streaming`、`set_card_output_routing`、`set_card_output_level`
+- 状態の問い合わせ(3): `get_channel_status`、`get_all_channels_status`、`get_mixer_snapshot`
+- リソース(8、`x32://...`): `get_fader`、`get_pan`、`get_gain`、`get_mute_status`、`get_phantom_power`、`get_routing`、`get_channel_name`、`get_channel_color`
+
+引数の細かい決まりは `src/x32_mcp/server.py` を見てください。
+
+### 安全について: 本物のミキサーが動きます
+
+- このツールは、ミキサーの今の状態を、確認なしですぐに変えます。言い方を間違えると、本番の PA でフェーダーが上がったり、ファンタム電源(+48V)を、それを嫌うマイクに送ったりします。お客さんの前では、自分でミキサーを見ていない限り使わないでください。
+- 新しい頼み方は、先にモックで試してください。
+- 認証はありません。ミキサーは信頼できるネットワークに置き、この MCP サーバーをインターネットに出さないでください。
+
+### できないこと・気をつけること
+
+- dB と値の変換は直線の近似で、X32 本来の4区間の曲線ではありません。フェーダーの値が少しずれることがあります。
+- まだ無いもの: ダイナミクス(コンプレッサー・ゲート)、エフェクトのパラメータ、シーンとスナップショット、チャンネルのリンク、メーター、出力ソースの追加。
+- チャンネル名・色の読み取りは、X32 の OSC の返事しだいで、ファームウェアによっては動かないことがあります。
+- `http` コマンド(`python -m x32_mcp.server http --host 127.0.0.1 --port 8000`)には認証がなく、今回は動作を確かめていません。localhost だけで使うか、STDIO を使ってください。
+- 動作を確かめたのは同梱のモックです。すべての X32 のファームウェアで、きちんと試したわけではありません。
+- 非公式です。Behringer / Music Tribe とは関係なく、承認も受けていません。「Behringer」「X32」は、それぞれの権利者の商標です。
+
+### 困ったとき
+
+- **サーバーにつながらない:** `claude mcp list` で確かめ、`claude mcp remove x32-mcp` で消して、もう一度足します。
+- **ミキサーが答えない:** パソコンと X32 が同じネットワークにあるか、`X32_IP` が合っているか、UDP 10023 がファイアウォールで止められていないかを確かめます。
+- **モックが起動しない:** 別のプログラムが 10023 番を使っているかもしれません(Windows は `netstat -an | findstr 10023`、macOS/Linux は `lsof -i :10023`)。
+- **STDIO のとき:** サーバーのコードから標準出力に書かないでください。MCP の通信が壊れます。ログは標準エラーに出ます。
+
+### 開発
+
+```bash
+mcp dev src/x32_mcp/server.py     # MCP Inspector
+```
+
+`EXPANSION_PLAN.md` は古い計画のメモです。今のツールの一覧は、この README を見てください。
+
+### ライセンス
+
+MIT です。[LICENSE](LICENSE) を見てください。作者: Yuki Tsuruoka([@mackatwentytsuru](https://github.com/mackatwentytsuru))。
+
+### 参考
+
+- [Model Context Protocol](https://modelcontextprotocol.io/)
+- [FastMCP](https://github.com/jlowin/fastmcp)
+- [python-osc](https://github.com/attwad/python-osc)
+- [X32 OSC の非公式ドキュメント](https://sites.google.com/site/patrickmaillot/x32)
