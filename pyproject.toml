@@ -9,8 +9,7 @@ description = "MCP server for controlling Behringer X32 digital mixer via OSC"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.2.0",
-    "fastmcp>=1.0.0",
+    "mcp[cli]>=1.2.0,<2",
     "python-osc>=1.7.5",
     "typer>=0.12",
     "uvicorn>=0.30.0",

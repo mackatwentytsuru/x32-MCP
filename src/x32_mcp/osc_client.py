@@ -75,6 +75,30 @@ class X32Client:
         except Exception as e:
             raise X32Error(f"OSC送信エラー ({address}): {e}")
 
+    def _roundtrip(self, address: str) -> OscMessage:
+        """
+        値なしメッセージを送信し、応答メッセージを返す(内部用)
+
+        Windows では、直前に送った UDP が「宛先なし」で戻されると、次の recvfrom が
+        ConnectionResetError (WinError 10054) になる。古いエラーなので、1回だけ送り直す。
+        On Windows a stale ICMP "port unreachable" from an earlier send makes the next
+        recvfrom raise ConnectionResetError; the request is simply sent once more.
+        """
+        for attempt in (1, 2):
+            builder = OscMessageBuilder(address=address)
+            msg = builder.build()
+            self._sock.sendto(msg.dgram, (self.host, self.port))
+            time.sleep(RATE_LIMIT_SLEEP)
+            try:
+                data, _ = self._sock.recvfrom(4096)
+            except ConnectionResetError:
+                if attempt == 2:
+                    raise
+                logger.debug(f"Stale connection reset on {address}; retrying once")
+                continue
+            return OscMessage(data)
+        raise X32Error(f"応答を取得できませんでした: {address}")  # pragma: no cover
+
     def query_float(self, address: str) -> float:
         """
         値なしメッセージを送信し、float応答を取得
@@ -89,15 +113,8 @@ class X32Client:
             X32Error: 通信エラー、応答なし、パースエラー
         """
         try:
-            # 値なしメッセージを送信
-            builder = OscMessageBuilder(address=address)
-            msg = builder.build()
-            self._sock.sendto(msg.dgram, (self.host, self.port))
-            time.sleep(RATE_LIMIT_SLEEP)
-
-            # 応答を受信
-            data, _ = self._sock.recvfrom(4096)
-            response = OscMessage(data)
+            # 値なしメッセージを送信し、応答を受信
+            response = self._roundtrip(address)
 
             # 最初の引数をfloatとして取得
             if not response.params:
@@ -126,13 +143,7 @@ class X32Client:
             X32Error: 通信エラー、応答なし、パースエラー
         """
         try:
-            builder = OscMessageBuilder(address=address)
-            msg = builder.build()
-            self._sock.sendto(msg.dgram, (self.host, self.port))
-            time.sleep(RATE_LIMIT_SLEEP)
-
-            data, _ = self._sock.recvfrom(4096)
-            response = OscMessage(data)
+            response = self._roundtrip(address)
 
             if not response.params:
                 raise X32Error(f"応答に値が含まれていません: {address}")

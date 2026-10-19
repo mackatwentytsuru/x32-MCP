@@ -1495,9 +1495,9 @@ def http(host: str = "127.0.0.1", port: int = 8000):
     logger.info(f"Starting X32 MCP Server in HTTP mode on {host}:{port}")
     import uvicorn
 
-    # FastMCPのASGIアプリを取得
-    app = mcp.get_asgi_app()
-    uvicorn.run(app, host=host, port=port)
+    # FastMCPのStreamable HTTP用ASGIアプリを取得 (MCP SDK 1.x)
+    asgi_app = mcp.streamable_http_app()
+    uvicorn.run(asgi_app, host=host, port=port)
 
 
 def cli():

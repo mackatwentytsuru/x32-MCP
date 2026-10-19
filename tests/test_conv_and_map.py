@@ -14,12 +14,16 @@ class TestConversion:
         assert db_to_level(-90.0) == pytest.approx(0.0)
 
     def test_db_to_level_max(self):
-        assert db_to_level(10.0) == pytest.approx(1.0)
+        # +10 dB is the top of the measured table (0.999022), not exactly 1.0
+        assert db_to_level(10.0) == pytest.approx(0.999022, abs=1e-6)
 
     def test_db_to_level_mid(self):
-        # -40 dB → 約0.5（線形近似）
-        result = db_to_level(-40.0)
-        assert 0.4 < result < 0.6
+        # -40 dB is a measured point of the X32 fader curve (0.187683)
+        assert db_to_level(-40.0) == pytest.approx(0.187683, abs=1e-6)
+
+    def test_db_to_level_is_monotonic(self):
+        values = [db_to_level(db) for db in range(-90, 11, 5)]
+        assert values == sorted(values)
 
     def test_level_to_db_min(self):
         assert level_to_db(0.0) == pytest.approx(-90.0)

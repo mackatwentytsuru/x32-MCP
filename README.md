@@ -27,6 +27,7 @@ You talk to the assistant ("set channel 1 to -3 dB and name it Vocal 1"), and th
 ### Requirements
 
 - Python 3.11 or newer
+- The MCP Python SDK 1.x (`pip install -e .` pulls `mcp<2`; the code uses its `FastMCP`, which was renamed in 2.x)
 - A Behringer X32 / X32 Rack / M32, or the bundled mock server
 - Network access to the mixer on UDP port 10023
 
@@ -127,10 +128,10 @@ See `src/x32_mcp/server.py` for the exact arguments.
 
 ### Limitations
 
-- The dB-to-level conversion is a linear approximation, not the exact four-range curve of the X32. Fader values can be slightly off.
+- The dB-to-level conversion is a piecewise-linear table measured on one X32 (see `src/x32_mcp/conv.py`). Values between the measured points are interpolated, so a fader can be slightly off from the console's own curve.
 - Not implemented yet: dynamics (compressor, gate), effects parameters, scenes and snapshots, channel linking, meters, more output sources.
 - Some channel reads (name, color) depend on what the X32's OSC interface returns and may not work on every firmware.
-- The `http` command (`python -m x32_mcp.server http --host 127.0.0.1 --port 8000`) has no authentication and was not verified for this release. Keep it on localhost, or use STDIO.
+- The `http` command (`python -m x32_mcp.server http --host 127.0.0.1 --port 8000`) serves MCP over Streamable HTTP at `/mcp`. It has no authentication, and it was only checked with a single `initialize` request, not with a real client. Keep it on localhost, or use STDIO.
 - Tested against the bundled mock server. It has not been through a systematic test on every X32 firmware.
 - Unofficial. Not affiliated with or endorsed by Behringer / Music Tribe. "Behringer" and "X32" are trademarks of their owners.
 
@@ -181,6 +182,7 @@ Behringer X32 デジタルミキサーを、AI アシスタント(Claude Code・
 ### 必要な物
 
 - Python 3.11 以上
+- MCP の Python SDK 1.x(`pip install -e .` で `mcp<2` が入ります。コードが使う `FastMCP` は 2.x で名前が変わったためです)
 - Behringer X32 / X32 Rack / M32(または同梱のモック)
 - ミキサーへ UDP 10023 番ポートで届くネットワーク
 
@@ -275,10 +277,10 @@ X32_IP=127.0.0.1 pytest -q       # PowerShell: $env:X32_IP="127.0.0.1"; pytest -
 
 ### できないこと・気をつけること
 
-- dB と値の変換は直線の近似で、X32 本来の4区間の曲線ではありません。フェーダーの値が少しずれることがあります。
+- dB と値の変換は、X32 1台で測った値の表(区分直線、`src/x32_mcp/conv.py`)です。測った点のあいだは補間なので、卓本来の曲線と少しずれることがあります。
 - まだ無いもの: ダイナミクス(コンプレッサー・ゲート)、エフェクトのパラメータ、シーンとスナップショット、チャンネルのリンク、メーター、出力ソースの追加。
 - チャンネル名・色の読み取りは、X32 の OSC の返事しだいで、ファームウェアによっては動かないことがあります。
-- `http` コマンド(`python -m x32_mcp.server http --host 127.0.0.1 --port 8000`)には認証がなく、今回は動作を確かめていません。localhost だけで使うか、STDIO を使ってください。
+- `http` コマンド(`python -m x32_mcp.server http --host 127.0.0.1 --port 8000`)は、Streamable HTTP で `/mcp` に MCP を出します。認証はなく、確かめたのは `initialize` の1回の要求だけで、実際のクライアントでは試していません。localhost だけで使うか、STDIO を使ってください。
 - 動作を確かめたのは同梱のモックです。すべての X32 のファームウェアで、きちんと試したわけではありません。
 - 非公式です。Behringer / Music Tribe とは関係なく、承認も受けていません。「Behringer」「X32」は、それぞれの権利者の商標です。
 
@@ -307,3 +309,11 @@ MIT です。[LICENSE](LICENSE) を見てください。作者: Yuki Tsuruoka([@
 - [FastMCP](https://github.com/jlowin/fastmcp)
 - [python-osc](https://github.com/attwad/python-osc)
 - [X32 OSC の非公式ドキュメント](https://sites.google.com/site/patrickmaillot/x32)
+
+---
+
+### Author / 作者
+
+Made by Yuki Tsuruoka — stage visuals and live show production, building tools with Claude Code. Web: [otolume.com](https://otolume.com) (OTOLUME, a stage LED visual service) / Instagram: [@tsuru614](https://www.instagram.com/tsuru614/) / YouTube: [channel](https://www.youtube.com/channel/UCYngpwyo7vGBIXBtKhh7z1g)
+
+作者: Yuki Tsuruoka(ステージ映像・ライブ演出。道具は Claude Code で作っています)Web: [otolume.com](https://otolume.com)(OTOLUME、ステージ LED 映像のサービス) / Instagram: [@tsuru614](https://www.instagram.com/tsuru614/) / YouTube: [channel](https://www.youtube.com/channel/UCYngpwyo7vGBIXBtKhh7z1g)

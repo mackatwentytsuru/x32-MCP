@@ -8,6 +8,8 @@ import pytest
 import time
 import subprocess
 import socket
+import sys
+from pathlib import Path
 from x32_mcp.server import set_fader, set_mute, set_bus_send, route_output, get_fader, get_routing
 from x32_mcp.osc_client import X32Client
 
@@ -27,12 +29,15 @@ def mock_x32():
         sock.bind(("127.0.0.1", 10023))
         sock.close()
         # ポートが空いている→モックを起動
+        # Use the same interpreter that runs pytest (a bare "python" may be another install)
+        # and an absolute script path, so it works from any working directory.
+        mock_script = Path(__file__).resolve().parents[1] / "scripts" / "fake_x32.py"
         proc = subprocess.Popen(
-            ["python", "scripts/fake_x32.py"],
+            [sys.executable, str(mock_script)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        time.sleep(1)  # 起動待機
+        time.sleep(2)  # 起動待機(モックが待ち受けを始めるまで)
         yield proc
         proc.terminate()
         proc.wait()
